@@ -26,6 +26,16 @@ def record_video(video_writer, frame):
 def save_csv_data(csv_writer, timestamp, distance_in): # csv_writer, timestamp, and distance_in are parameters
     csv_writer.writerow([timestamp, distance_in])
 
+def draw_rounded_rect(image, top_left, bottom_right, color, thickness, r):
+    x1,y1 = top_left
+    x2,y2 = bottom_right
+    cv2.rectangle(image, (x1+r, y1), (x2-r, y2), color, -1)
+    cv2.rectangle(image, (x1, y1+r), (x2, y2-r), color, -1)
+    cv2.ellipse(image, (x1+r, y1+r), (r,r), 180, 0, 90, color, -1)
+    cv2.ellipse(image, (x2-r, y1+r), (r,r), 270, 0, 90, color, -1)
+    cv2.ellipse(image, (x1+r, y2-r), (r,r), 90, 0, 90, color, -1)
+    cv2.ellipse(image, (x2-r, y2-r), (r,r), 0, 0, 90, color, -1)
+
 pipeline = dai.Pipeline()
 
 cam_rgb = pipeline.createColorCamera()
@@ -78,6 +88,15 @@ while True:
     # Find the red dots in the frame
     red_dots = dot_detector.find_dots(frame)
 
+    # Draw a circle and a single point dot at the center for each detected red dot
+    for dot in red_dots:
+        # Draw a circle
+        cv2.circle(frame, tuple(dot), radius=20, color=(0, 255, 0), thickness=2)
+
+        # Draw a dot at the center
+        cv2.drawMarker(frame, tuple(dot), color=(0, 255, 0), markerType=cv2.MARKER_TILTED_CROSS, 
+                       markerSize=2, thickness=2, line_type=cv2.LINE_AA)
+
     distance_px = None
     distance_in = None
     if len(red_dots) >= 2:
@@ -96,21 +115,31 @@ while True:
 
     # Draw the buttons and signifiers on the frame
     button_color = (0, 255, 0) if recording_video else (0, 0, 255)
-    cv2.rectangle(frame, (10, 600), (103, 630), button_color, -1)
-    cv2.putText(frame, "[R]ecord", (15, 622), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+    
+    # Define the top-left and bottom-right coordinates for the button
+    button_top_left = (frame.shape[1] - 120, 10)  # 120 pixels from the right and 10 pixels from the top
+    button_bottom_right = (frame.shape[1] - 20, 50)  # 20 pixels from the right and 50 pixels from the top
+    
+    draw_rounded_rect(frame, button_top_left, button_bottom_right, button_color, -1, 10)
+    
+    # Define the bottom-left corner of the text string in the image
+    text_org = (frame.shape[1] - 105, 38)  # Adjust these values as needed
+
+    cv2.putText(frame, "[R]ec", text_org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 1)
+
 
     if recording_video:
         # Only display the counter when recording
         elapsed_time = current_timestamp - recording_start_time
         elapsed_time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
-        cv2.putText(frame, elapsed_time_str, (int(frame.shape[1]*0.75), 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(frame, elapsed_time_str, (int(frame.shape[1]*0.75), 38), cv2.FONT_HERSHEY_SIMPLEX, .8, (0, 255, 0), 2)
 
         # If CSV recording is active, save data to CSV
         if recording_csv:
             timestamp = time.strftime("%Y%m%d-%H%M%S")
             save_csv_data(csv_writer, timestamp, distance_in)
             csv_status_text = "Capturing Data"
-            cv2.putText(frame, csv_status_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(frame, csv_status_text, (10, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
     # Show the frame
     cv2.imshow("Camera Extensometer", frame)
