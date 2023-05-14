@@ -7,7 +7,7 @@ from dot import DotDetector
 
 # Ask the user to enter the initial dot spacing in inches
 ROOT = tk.Tk() # Create a Tkinter window
-ROOT.withdraw() # Hide the Tkinter window
+#ROOT.withdraw() # Hide the Tkinter window
 initial_dot_spacing_in = simpledialog.askfloat(title="Initial Dot Spacing",
                                                prompt="Please enter the initial dot spacing (in):") # Ask the user to enter the initial dot spacing in inches
 ROOT.destroy() # Destroy the Tkinter window
