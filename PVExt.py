@@ -1,16 +1,21 @@
-import cv2,  time, csv
+import cv2, time, csv, wx 
 import depthai as dai
 import numpy as np
-import tkinter as tk
-from tkinter import simpledialog
 from dot import DotDetector
 
-# Ask the user to enter the initial dot spacing in inches
-ROOT = tk.Tk() # Create a Tkinter window
-#ROOT.withdraw() # Hide the Tkinter window
-initial_dot_spacing_in = simpledialog.askfloat(title="Initial Dot Spacing",
-                                               prompt="Please enter the initial dot spacing (in):") # Ask the user to enter the initial dot spacing in inches
-ROOT.destroy() # Destroy the Tkinter window
+# Create a wx.App instance
+app = wx.App()
+
+def get_initial_dot_spacing():
+    # Use wx.TextEntryDialog to get the user's input
+    dialog = wx.TextEntryDialog(None, "Please enter the initial dot spacing (in):", "Initial Dot Spacing")
+    if dialog.ShowModal() == wx.ID_OK:  # The user clicked OK
+        initial_dot_spacing_in = float(dialog.GetValue())  # Convert the input to a float
+        return initial_dot_spacing_in
+    else:  # The user clicked Cancel or closed the dialog
+        app.Exit()  # Exit the program
+
+initial_dot_spacing_in = get_initial_dot_spacing()
 
 # Create an instance of DotDetector
 dot_detector = DotDetector("moments")
