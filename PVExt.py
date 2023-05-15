@@ -146,12 +146,12 @@ while True:
 
     key = cv2.waitKey(1)
 
-    # Check if the user pressed the 'q' key
-    if key == ord("q"):
+    # Check if the user pressed the 'q' or 'Q' key
+    if key in [ord("q"), ord("Q")]:
         break
 
-    # Check if the user pressed the 'r' key to toggle video recording
-    if key == ord("r"):
+    # Check if the user pressed the 'r' or 'R' key to toggle video recording
+    if key in [ord("r"), ord("R")]:
         recording_video = not recording_video
         recording_csv = not recording_csv
         if recording_video:
