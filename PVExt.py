@@ -134,12 +134,16 @@ while True:
         elapsed_time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
         cv2.putText(frame, elapsed_time_str, (int(frame.shape[1]*0.75), 38), cv2.FONT_HERSHEY_SIMPLEX, .8, (0, 255, 0), 2)
 
+        # Write frame to the video file
+        video_writer.write(frame)
+
         # If CSV recording is active, save data to CSV
         if recording_csv:
             timestamp = time.strftime("%Y%m%d-%H%M%S")
             save_csv_data(csv_writer, timestamp, distance_in)
             csv_status_text = "Capturing Data"
-            cv2.putText(frame, csv_status_text, (10, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            cv2.putText(frame, csv_status_text, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
 
     # Show the frame
     cv2.imshow("Camera Extensometer", frame)
@@ -158,7 +162,7 @@ while True:
             timestamp = time.strftime("%Y%m%d-%H%M%S")
 
             # Use the actual FPS when creating the VideoWriter
-            video_writer = cv2.VideoWriter(f"video_{timestamp}.avi", cv2.VideoWriter_fourcc(*'MJPG'), fps, (1920, 1080))
+            video_writer = cv2.VideoWriter(f"video_{timestamp}.avi", cv2.VideoWriter_fourcc(*'MJPG'), fps, (1080, 1920))
 
             # Create CSV Writer
             csv_file = open(f"data_{timestamp}.csv", 'w', newline='')
