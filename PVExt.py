@@ -1,146 +1,188 @@
-import cv2, time, csv
+import cv2, time, csv, wx 
 import depthai as dai
 import numpy as np
+from dot import DotDetector
 
-MIN_RED_DOT_AREA = 60 # Minimum area of a red dot in pixels
+# Create a wx.App instance
+app = wx.App()
 
-# Function to find the red dots in the frame
-def find_red_dots(frame):
-    red_mask = get_red_mask(frame) # Get the red mask
-    contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # Find the contours
+def get_initial_dot_spacing():
+    # Use wx.TextEntryDialog to get the user's input
+    dialog = wx.TextEntryDialog(None, "Please enter the initial dot spacing (in):", "Initial Dot Spacing")
+    if dialog.ShowModal() == wx.ID_OK:  # The user clicked OK
+        initial_dot_spacing_in = float(dialog.GetValue())  # Convert the input to a float
+        return initial_dot_spacing_in
+    else:  # The user clicked Cancel or closed the dialog
+        app.Exit()  # Exit the program
 
-    red_dots = [] # Create an empty list to store the red dots
-    for cnt in contours: # Iterate through the contours
-        area = cv2.contourArea(cnt) # Get the area of the contour
-        if area > MIN_RED_DOT_AREA: # If the area is greater than the minimum area
-            M = cv2.moments(cnt) # Get the moments of the contour
-            if M["m00"] != 0: # If the area is not zero
-                cx = int(M["m10"] / M["m00"]) # Get the x coordinate of the center of the contour
-                cy = int(M["m01"] / M["m00"]) # Get the y coordinate of the center of the contour
-                red_dots.append((cx, cy)) # Add the center coordinates to the list
+initial_dot_spacing_in = get_initial_dot_spacing()
 
-    return red_dots # Return the list of red dots
+# Create an instance of DotDetector
+dot_detector = DotDetector("moments")
 
-# Function to get the red mask
-def get_red_mask(frame): 
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV) # Convert the frame to HSV
-    lower_red1 = np.array([0, 100, 100]) # Lower HSV values for red
-    upper_red1 = np.array([10, 255, 255]) # Upper HSV values for red
-    lower_red2 = np.array([160, 100, 100]) # Lower HSV values for red
-    upper_red2 = np.array([180, 255, 255]) # Upper HSV values for red
-    mask1 = cv2.inRange(hsv, lower_red1, upper_red1) # Get the mask for the first red range
-    mask2 = cv2.inRange(hsv, lower_red2, upper_red2) # Get the mask for the second red range
-    red_mask = cv2.bitwise_or(mask1, mask2) # Combine the masks
-    return red_mask # Return the red mask
+def record_video(video_writer, frame):
+    video_writer.write(frame)
 
-# Function to record the video
-def record_video(video_writer, frame): 
-    video_writer.write(frame) # Write the frame to the video
+def save_csv_data(csv_writer, timestamp, distance_in): # csv_writer, timestamp, and distance_in are parameters
+    csv_writer.writerow([timestamp, distance_in])
 
-# Function to save the data to the CSV file
-def save_csv_data(csv_writer, timestamp, distance_px): 
-    csv_writer.writerow([timestamp, distance_px]) 
+def draw_rounded_rect(image, top_left, bottom_right, color, thickness, r):
+    x1,y1 = top_left
+    x2,y2 = bottom_right
+    cv2.rectangle(image, (x1+r, y1), (x2-r, y2), color, -1)
+    cv2.rectangle(image, (x1, y1+r), (x2, y2-r), color, -1)
+    cv2.ellipse(image, (x1+r, y1+r), (r,r), 180, 0, 90, color, -1)
+    cv2.ellipse(image, (x2-r, y1+r), (r,r), 270, 0, 90, color, -1)
+    cv2.ellipse(image, (x1+r, y2-r), (r,r), 90, 0, 90, color, -1)
+    cv2.ellipse(image, (x2-r, y2-r), (r,r), 0, 0, 90, color, -1)
 
-pipeline = dai.Pipeline() # Create the camera pipeline
+pipeline = dai.Pipeline()
 
-cam_rgb = pipeline.createColorCamera() # Create the RGB camera
-cam_rgb.setPreviewSize(1920, 1080) # Set the preview size
-cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P) # Set the resolution
-cam_rgb.setInterleaved(False) # Set the interleaved mode to False
+cam_rgb = pipeline.createColorCamera()
+cam_rgb.setPreviewSize(1920, 1080)
+cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+cam_rgb.setInterleaved(False)
 
-rgb_out = pipeline.createXLinkOut() # Create the output stream
-rgb_out.setStreamName("rgb") # Set the stream name
-cam_rgb.preview.link(rgb_out.input) # Link the camera preview to the output stream
+rgb_out = pipeline.createXLinkOut()
+rgb_out.setStreamName("rgb")
+cam_rgb.preview.link(rgb_out.input)
 
-device = dai.Device(pipeline) # Create the device
+device = dai.Device(pipeline)
 
-q_rgb = device.getOutputQueue("rgb") # Get the output queue for the RGB stream
+q_rgb = device.getOutputQueue("rgb")
 
-cv2.namedWindow("Camera Extensometer") # Create the window
+cv2.namedWindow("Camera Extensometer")
 
-recording_video = False # Initialize the recording status to False
-recording_csv = False # Initialize the recording status to False
-video_writer = None # Initialize the video writer to None
-csv_writer = None # Initialize the CSV writer to None
-csv_file = None # Initialize the CSV file to None
+recording_video = False
+recording_csv = False
+video_writer = None
+csv_writer = None
+csv_file = None
 
-start_time = time.time() # Get the start time
+pixels_per_inch = None
+
+start_time = time.time()
 
 # Initialize the recording start time to zero
 recording_start_time = 0
 
-previous_timestamp = None # Initialize the previous timestamp to None
+previous_timestamp = None
 
 # Main loop
 while True:
-    in_rgb = q_rgb.get() # Get the RGB frame
-    frame = in_rgb.getCvFrame() # Get the frame as a NumPy array
+    # Get the current frame from the color camera
+    in_rgb = q_rgb.get()
+    frame = in_rgb.getCvFrame()
 
-    current_timestamp = time.time() # Get the current timestamp
-    if previous_timestamp is None: # If the previous timestamp is None
-        fps = 30 # Set the FPS to 30
+    # Calculate the actual FPS
+    current_timestamp = time.time()
+    if previous_timestamp is None:
+        fps = 30  # Default FPS for the first frame
     else:
-        fps = 1.0 / (current_timestamp - previous_timestamp) # Calculate the FPS
-    previous_timestamp = current_timestamp # Set the previous timestamp to the current timestamp
+        fps = 1.0 / (current_timestamp - previous_timestamp)
+    previous_timestamp = current_timestamp
 
-    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE) # Rotate the frame 90 degrees counter-clockwise
+    # Rotate the frame 90 degrees
+    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-    red_dots = find_red_dots(frame) # Find the red dots in the frame
+    # Find the red dots in the frame
+    red_dots = dot_detector.find_dots(frame)
 
-    distance_px = None # Initialize the distance in pixels to None
-    if len(red_dots) >= 2: # If there are at least two red dots
-        cv2.circle(frame, red_dots[0], 5, (0, 255, 0), -1) # Draw a circle at the first red dot
-        cv2.circle(frame, red_dots[1], 5, (0, 255, 0), -1) # Draw a circle at the second red dot
+    # Draw a circle and a single point dot at the center for each detected red dot
+    for dot in red_dots:
+        # Draw a circle
+        cv2.circle(frame, tuple(dot), radius=20, color=(0, 255, 0), thickness=2)
 
-        distance = np.sqrt((red_dots[0][0] - red_dots[1][0]) ** 2 + (red_dots[0][1] - red_dots[1][1]) ** 2) # Calculate the distance between the red dots
-        distance_px = distance # Set the distance in pixels to the distance
+        # Draw a dot at the center
+        cv2.drawMarker(frame, tuple(dot), color=(0, 255, 0), markerType=cv2.MARKER_TILTED_CROSS, 
+                       markerSize=2, thickness=2, line_type=cv2.LINE_AA)
 
-        cv2.putText(frame, f"Distance: {distance_px:.2f} px", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, .7, (0, 255, 0), 2) # Display the distance in pixels
+    distance_px = None
+    distance_in = None
+    if len(red_dots) >= 2:
+        # Calculate distance in pixels
+        distance_px = np.sqrt((red_dots[0][0] - red_dots[1][0]) ** 2 + (red_dots[0][1] - red_dots[1][1]) ** 2)
 
-    button_color = (0, 255, 0) if recording_video else (0, 0, 255) # Set the button color to green if recording, otherwise red
-    cv2.rectangle(frame, (10, 600), (103, 630), button_color, -1) # Draw the record button
-    cv2.putText(frame, "[R]ecord", (15, 622), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1) # Display the record button text
+        # If pixels_per_inch is not yet calculated, calculate it
+        if pixels_per_inch is None and distance_px is not None:
+            pixels_per_inch = distance_px / initial_dot_spacing_in
 
-    # Display the time code
-    elapsed_time = current_timestamp - (recording_start_time if recording_video else start_time)
-    cv2.putText(frame, f"Time: {elapsed_time:.2f}s", (10, 660), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        # Calculate the distance in inches
+        if pixels_per_inch is not None:
+            distance_in = distance_px / pixels_per_inch
 
-    if recording_video: 
-        csv_status_text = "Capturing Data" # Set the onscreen status text to "Capturing Data"
-        cv2.putText(frame, csv_status_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2) # Display the onscreen status text
+        cv2.putText(frame, f"Distance: {distance_in:.2f} in", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, .7, (0, 255, 0), 2)
 
-    cv2.imshow("Camera Extensometer", frame) # Display the frame
+    # Draw the buttons and signifiers on the frame
+    button_color = (0, 255, 0) if recording_video else (0, 0, 255)
+    
+    # Define the top-left and bottom-right coordinates for the button
+    button_top_left = (frame.shape[1] - 120, 10)  # 120 pixels from the right and 10 pixels from the top
+    button_bottom_right = (frame.shape[1] - 20, 50)  # 20 pixels from the right and 50 pixels from the top
+    
+    draw_rounded_rect(frame, button_top_left, button_bottom_right, button_color, -1, 10)
+    
+    # Define the bottom-left corner of the text string in the image
+    text_org = (frame.shape[1] - 105, 38)  # Adjust these values as needed
 
-    key = cv2.waitKey(1) # Wait for a key press
+    cv2.putText(frame, "[R]ec", text_org, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 1)
 
-    if key == ord("q"): # If the key is "q" quit the program
+
+    if recording_video:
+        # Only display the counter when recording
+        elapsed_time = current_timestamp - recording_start_time
+        elapsed_time_str = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
+        cv2.putText(frame, elapsed_time_str, (int(frame.shape[1]*0.75), 38), cv2.FONT_HERSHEY_SIMPLEX, .8, (0, 255, 0), 2)
+
+        # Write frame to the video file
+        video_writer.write(frame)
+
+        # If CSV recording is active, save data to CSV
+        if recording_csv:
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            save_csv_data(csv_writer, timestamp, distance_in)
+            csv_status_text = "Capturing Data"
+            cv2.putText(frame, csv_status_text, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+
+    # Show the frame
+    cv2.imshow("Camera Extensometer", frame)
+
+    key = cv2.waitKey(1)
+
+    # Check if the user pressed the 'q' or 'Q' key
+    if key in [ord("q"), ord("Q")]:
         break
 
-    if key == ord("r"): # If the key is "r" toggle the recording status
-        recording_video = not recording_video # Toggle the recording status
-        if recording_video: # If the recording status is True
-            timestamp = time.strftime("%Y%m%d-%H%M%S") # Get the current timestamp
-            video_writer = cv2.VideoWriter(f"video_{timestamp}.avi", cv2.VideoWriter_fourcc(*'MJPG'), fps, (frame.shape[1], frame.shape[0])) # Create the video writer
-            csv_file = open(f"data_{timestamp}.csv", "w", newline="") # Open the CSV file
-            csv_writer = csv.writer(csv_file) # Create the CSV writer
-            csv_writer.writerow(["timestamp", "distance_px"]) # Write the CSV header
+    # Check if the user pressed the 'r' or 'R' key to toggle video recording
+    if key in [ord("r"), ord("R")]:
+        recording_video = not recording_video
+        recording_csv = not recording_csv
+        if recording_video:
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-            # Set the recording start time when the recording starts
-            recording_start_time = current_timestamp 
+            # Use the actual FPS when creating the VideoWriter
+            video_writer = cv2.VideoWriter(f"video_{timestamp}.avi", cv2.VideoWriter_fourcc(*'MJPG'), fps, (1080, 1920))
+
+            # Create CSV Writer
+            csv_file = open(f"data_{timestamp}.csv", 'w', newline='')
+            csv_writer = csv.writer(csv_file)
+            csv_writer.writerow(["Timestamp", "Distance_in"])  # Write header
+            recording_start_time = current_timestamp
         else:
-            video_writer.release() # Release the video writer
-            csv_file.close() # Close the CSV file
+            # Close VideoWriter and CSV Writer
+            if video_writer:
+                video_writer.release()
+                video_writer = None
 
-    if recording_video: # If the recording status is True
-        if video_writer is not None: # If the video writer is not None
-            record_video(video_writer, frame) # Record the frame
-        if csv_writer is not None and distance_px is not None: # If the CSV writer is not None and the distance in pixels is not None
-            elapsed_time = current_timestamp - recording_start_time # Calculate the elapsed time
-            save_csv_data(csv_writer, elapsed_time, distance_px) # Save the data to the CSV file
+            if csv_file:
+                csv_file.close()
+                csv_file = None
+                csv_writer = None
 
-cv2.destroyAllWindows() # Destroy all the windows
-device.close() # Close the device
+cv2.destroyAllWindows()
+device.close()
 if video_writer is not None:
-    video_writer.release() # Release the video writer
-if csv_file is not None: # If the CSV file is not None
-    csv_file.close() # Close the CSV file
+    video_writer.release()
+if csv_file is not None:
+    csv_file.close()
