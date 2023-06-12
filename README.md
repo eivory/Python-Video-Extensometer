@@ -1,5 +1,8 @@
 # Python-Video-Extensometer
 
-To do:
-  - Pack calibration into PVExt
-  - Test other dot tracking methods
+To install
+python -m venv env
+pip -r install requirements.txt
+
+To run
+python PVExt.py
