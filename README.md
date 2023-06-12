@@ -1,8 +1,11 @@
 # Python-Video-Extensometer
 
-To install
+To install:
+
 python -m venv env
+
 pip -r install requirements.txt
 
-To run
+To run:
+
 python PVExt.py
